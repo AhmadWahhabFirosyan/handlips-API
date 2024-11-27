@@ -57,14 +57,14 @@ const Soundboard = sequelize.define("Soundboard", {
 
 // Google Cloud Setup
 const storage = new Storage({
-  keyFilename: path.join(__dirname, "gcp-key.json"),
+  keyFilename: "D:/Handlips REST API/gcp-key.json",
   projectId: process.env.GCP_PROJECT_ID,
 });
 
 const bucket = storage.bucket(process.env.GCP_BUCKET_NAME);
 
 const ttsClient = new textToSpeech.TextToSpeechClient({
-  keyFilename: path.join(__dirname, "gcp-key.json"),
+  keyFilename: "D:/Handlips REST API/gcp-key.json",
 });
 
 // Multer configuration for file uploads
@@ -178,6 +178,50 @@ app.get("/soundboards", async (req, res) => {
   }
 });
 
+app.delete("/soundboards/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Cari soundboard berdasarkan ID
+    const soundboard = await Soundboard.findByPk(id);
+    if (!soundboard) {
+      return res.status(404).json({
+        success: false,
+        message: "Soundboard tidak ditemukan",
+      });
+    }
+
+    // Hapus file audio dari Google Cloud Storage
+    const filename = soundboard.audioUrl.split("/").pop(); // Ambil nama file dari URL
+    const file = bucket.file(filename);
+
+    try {
+      await file.delete();
+      console.log(`File ${filename} berhasil dihapus dari Cloud Storage`);
+    } catch (error) {
+      console.error(
+        `Gagal menghapus file ${filename} dari Cloud Storage:`,
+        error.message
+      );
+      // Tidak perlu menghentikan proses jika file tidak ditemukan
+    }
+
+    // Hapus soundboard dari database
+    await soundboard.destroy();
+
+    res.json({
+      success: true,
+      message: "Soundboard berhasil dihapus",
+    });
+  } catch (error) {
+    console.error("Error deleting soundboard:", error);
+    res.status(500).json({
+      success: false,
+      message: "Gagal menghapus soundboard",
+    });
+  }
+});
+
 // History Routes
 app.post("/history", async (req, res) => {
   try {
@@ -263,6 +307,70 @@ app.get("/history/:id", async (req, res) => {
 });
 
 // Profile Routes
+app.post("/profile", upload.single("profile_picture"), async (req, res) => {
+  try {
+    const { name } = req.body;
+
+    if (!name) {
+      return res.status(400).json({
+        success: false,
+        message: "Name is required",
+      });
+    }
+
+    let profilePictureUrl = null;
+
+    // Jika file gambar disertakan, upload ke Google Cloud Storage
+    if (req.file) {
+      const filename = `profiles/${Date.now()}-${req.file.originalname}`;
+      profilePictureUrl = await uploadToGCS(
+        req.file.buffer,
+        filename,
+        req.file.mimetype
+      );
+    }
+
+    // Cek apakah sudah ada profil
+    const [existingProfile] = await sequelize.query(
+      "SELECT * FROM profile LIMIT 1",
+      {
+        type: Sequelize.QueryTypes.SELECT,
+      }
+    );
+
+    if (existingProfile) {
+      return res.status(400).json({
+        success: false,
+        message: "Profile already exists. Use PUT to update.",
+      });
+    }
+
+    // Buat profil baru
+    await sequelize.query(
+      "INSERT INTO profile (name, profile_picture_url) VALUES (?, ?)",
+      {
+        replacements: [name, profilePictureUrl],
+        type: Sequelize.QueryTypes.INSERT,
+      }
+    );
+
+    res.status(201).json({
+      success: true,
+      message: "Profile created successfully",
+      data: {
+        name,
+        profile_picture_url: profilePictureUrl,
+      },
+    });
+  } catch (error) {
+    console.error("Error creating profile:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
+
 app.get("/profile", async (req, res) => {
   try {
     const [profile] = await sequelize.query("SELECT * FROM profile LIMIT 1", {
