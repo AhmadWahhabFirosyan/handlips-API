@@ -122,7 +122,7 @@ const uploadToGCS = async (buffer, filename, contentType = "audio/mpeg") => {
 // API ROUTES
 
 // Soundboard Routes
-app.post("/api/soundboards", async (req, res) => {
+app.post("/soundboards", async (req, res) => {
   try {
     const { text } = req.body;
 
@@ -158,7 +158,7 @@ app.post("/api/soundboards", async (req, res) => {
   }
 });
 
-app.get("/api/soundboards", async (req, res) => {
+app.get("/soundboards", async (req, res) => {
   try {
     const soundboards = await Soundboard.findAll({
       order: [["createdAt", "DESC"]],
@@ -179,7 +179,7 @@ app.get("/api/soundboards", async (req, res) => {
 });
 
 // History Routes
-app.post("/api/history", async (req, res) => {
+app.post("/history", async (req, res) => {
   try {
     const { title, message } = req.body;
 
@@ -214,7 +214,7 @@ app.post("/api/history", async (req, res) => {
   }
 });
 
-app.get("/api/history", async (req, res) => {
+app.get("/history", async (req, res) => {
   try {
     const [histories] = await sequelize.query(
       "SELECT * FROM history ORDER BY created_at DESC",
@@ -233,7 +233,7 @@ app.get("/api/history", async (req, res) => {
   }
 });
 
-app.get("/api/history/:id", async (req, res) => {
+app.get("/history/:id", async (req, res) => {
   try {
     const [history] = await sequelize.query(
       "SELECT * FROM history WHERE id = ?",
@@ -263,7 +263,7 @@ app.get("/api/history/:id", async (req, res) => {
 });
 
 // Profile Routes
-app.get("/api/profile", async (req, res) => {
+app.get("/profile", async (req, res) => {
   try {
     const [profile] = await sequelize.query("SELECT * FROM profile LIMIT 1", {
       type: Sequelize.QueryTypes.SELECT,
@@ -288,7 +288,7 @@ app.get("/api/profile", async (req, res) => {
   }
 });
 
-app.put("/api/profile", upload.single("profile_picture"), async (req, res) => {
+app.put("/profile", upload.single("profile_picture"), async (req, res) => {
   try {
     const { name } = req.body;
     let profilePictureUrl = null;
@@ -336,14 +336,14 @@ app.put("/api/profile", upload.single("profile_picture"), async (req, res) => {
 });
 
 // Feedback Routes
-app.post("/api/feedback", async (req, res) => {
+app.post("/feedback/rating", async (req, res) => {
   try {
-    const { comment, rating } = req.body;
+    const { rating } = req.body;
 
-    if (!comment || !rating) {
+    if (!rating) {
       return res.status(400).json({
         success: false,
-        message: "Komentar dan rating harus diisi",
+        message: "Rating harus diisi",
       });
     }
 
@@ -354,21 +354,62 @@ app.post("/api/feedback", async (req, res) => {
       });
     }
 
+    // Simpan rating ke database
     const [result] = await sequelize.query(
-      "INSERT INTO feedback (comment, rating) VALUES (?, ?)",
+      "INSERT INTO feedback (rating) VALUES (?)",
       {
-        replacements: [comment, rating],
+        replacements: [rating],
         type: Sequelize.QueryTypes.INSERT,
       }
     );
 
     res.status(201).json({
       success: true,
+      message: "Rating berhasil disimpan",
       data: {
-        id: result,
-        comment,
+        id: result, // ID feedback untuk pembaruan di langkah berikutnya
         rating,
       },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: error.message,
+    });
+  }
+});
+
+app.put("/feedback/comment/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { comment } = req.body;
+
+    if (!comment) {
+      return res.status(400).json({
+        success: false,
+        message: "Komentar harus diisi",
+      });
+    }
+
+    // Perbarui feedback dengan komentar
+    const [result] = await sequelize.query(
+      "UPDATE feedback SET comment = ? WHERE id = ?",
+      {
+        replacements: [comment, id],
+        type: Sequelize.QueryTypes.UPDATE,
+      }
+    );
+
+    if (result === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Feedback tidak ditemukan",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Komentar berhasil ditambahkan",
     });
   } catch (error) {
     res.status(500).json({
@@ -401,14 +442,14 @@ const start = async () => {
       console.log(`Server berjalan di port ${PORT}`);
       console.log(`Test API at: http://localhost:${PORT}`);
       console.log("\nAvailable routes:");
-      console.log("- POST   /api/soundboards");
-      console.log("- GET    /api/soundboards");
-      console.log("- POST   /api/history");
-      console.log("- GET    /api/history");
-      console.log("- GET    /api/history/:id");
-      console.log("- GET    /api/profile");
-      console.log("- PUT    /api/profile");
-      console.log("- POST   /api/feedback");
+      console.log("- POST   /soundboards");
+      console.log("- GET    /soundboards");
+      console.log("- POST   /history");
+      console.log("- GET    /history");
+      console.log("- GET    /history/:id");
+      console.log("- GET    /profile");
+      console.log("- PUT    /profile");
+      console.log("- POST   /feedback");
     });
   } catch (error) {
     console.error("Unable to start server:", error);
